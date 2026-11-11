@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6f5e">
+  <title>Compta Laulau</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>🧾 Compta Laulau</h1>
+    <button id="btn-settings" class="icon" aria-label="Réglages">⚙️</button>
+  </header>
+
+  <main>
+    <!-- Écran principal : liste des dépenses -->
+    <section id="view-list">
+      <div class="summary" id="summary"></div>
+      <div class="actions-row">
+        <button id="btn-export-xlsx" class="secondary">📊 Excel</button>
+        <button id="btn-export-zip" class="secondary">📁 PDF (zip)</button>
+      </div>
+      <ul id="list" class="list"></ul>
+      <p id="empty" class="muted center">Aucune facture pour l'instant.<br>Appuie sur 📷 pour commencer.</p>
+    </section>
+
+    <!-- Écran de vérification après lecture d'une facture -->
+    <section id="view-review" hidden>
+      <img id="review-img" alt="Aperçu de la facture">
+      <p id="review-status" class="muted center"></p>
+      <form id="review-form">
+        <label>Date <input type="date" name="date" required></label>
+        <label>Fournisseur <input name="vendor" required></label>
+        <div class="grid3">
+          <label>Total TTC <input name="total" type="number" step="0.01" inputmode="decimal" required></label>
+          <label>TPS <input name="gst" type="number" step="0.01" inputmode="decimal"></label>
+          <label>TVQ <input name="qst" type="number" step="0.01" inputmode="decimal"></label>
+        </div>
+        <label>Paiement
+          <select name="payment">
+            <option value="">—</option><option>Carte de crédit</option><option>Débit</option>
+            <option>Comptant</option><option>Virement</option><option>Autre</option>
+          </select>
+        </label>
+        <label>Catégorie
+          <input name="category" list="categories" required autocomplete="off">
+          <datalist id="categories"></datalist>
+        </label>
+        <p id="category-hint" class="hint"></p>
+        <label>Note <input name="note" placeholder="optionnel"></label>
+        <div class="actions-row">
+          <button type="button" id="btn-cancel" class="secondary">Annuler</button>
+          <button type="submit" id="btn-save">✅ Enregistrer</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Réglages -->
+    <section id="view-settings" hidden>
+      <h2>Réglages</h2>
+      <label>Clé API Anthropic
+        <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off">
+      </label>
+      <p class="hint">La clé reste sur ce téléphone (jamais envoyée ailleurs qu'à Anthropic).</p>
+      <h3>Catégories</h3>
+      <ul id="cat-list" class="chips"></ul>
+      <div class="actions-row">
+        <button id="btn-settings-done">OK</button>
+      </div>
+      <p class="hint" id="version"></p>
+    </section>
+  </main>
+
+  <!-- Bouton photo : "capture" ouvre directement l'appareil photo sur Android -->
+  <label id="fab" class="fab" aria-label="Prendre une photo">
+    📷
+    <input id="file" type="file" accept="image/*" capture="environment" hidden>
+  </label>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
