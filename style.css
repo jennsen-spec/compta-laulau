@@ -38,6 +38,11 @@ button.icon { background: transparent; font-size: 1.4rem; padding: 4px 8px; }
 .actions-row { display: flex; gap: 10px; margin: 12px 0; }
 .actions-row > * { flex: 1; }
 .summary { font-weight: 600; margin-bottom: 4px; }
+.banner {
+  width: 100%; margin: 8px 0 0; text-align: left; font-weight: 500;
+  background: var(--accent-soft); color: var(--accent);
+}
+.banner:disabled { opacity: 1; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
 .hint { font-size: .9rem; color: var(--muted); margin: -4px 0 12px; }
@@ -63,7 +68,8 @@ input, select {
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
 }
 .grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; }
-.grid3 label { margin: 0; }
+.grid3 label, .grid2 label { margin: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
 #view-settings label { display: block; color: var(--muted); }
 
 .chips { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }

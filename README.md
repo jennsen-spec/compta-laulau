@@ -8,6 +8,7 @@ Petite app (web installable sur Android) pour une travailleuse autonome :
 4. 📊 Export Excel (onglet détail + onglet récap par catégorie)
 5. 📁 Export ZIP : un PDF par facture, rangé dans un dossier par catégorie, + l'Excel
 6. 📤 Sur Android, l'export ouvre le menu « Partager » (Gmail, Drive…) pour l'envoyer à la comptable
+7. ☁️ Synchro automatique dans **son** Google Drive : `Compta Laulau/2026/<Catégorie>/*.pdf` + `depenses-2026.xlsx` (voir [GOOGLE_SETUP.md](GOOGLE_SETUP.md))
 
 ## Installer sur le téléphone (Android)
 
@@ -17,13 +18,15 @@ Petite app (web installable sur Android) pour une travailleuse autonome :
 
 ## Où sont les données ?
 
-Tout reste **sur le téléphone** (IndexedDB du navigateur). Seule la photo est envoyée à l'API Anthropic pour être lue.
-⚠️ Si on efface les données de Chrome ou qu'on désinstalle l'app, les factures sont perdues → exporter le ZIP régulièrement.
+Sur le téléphone (IndexedDB du navigateur) **et**, si Drive est connecté, dans son Google Drive.
+La photo est envoyée à l'API Anthropic pour être lue.
+⚠️ Sans Drive : si on efface les données de Chrome, les factures sont perdues → exporter le ZIP régulièrement.
 
 ## Technique
 
 - HTML/CSS/JS sans étape de build, hébergé sur GitHub Pages
-- `app.js` : toute la logique (stockage, appel Claude, exports)
+- `app.js` : la logique (stockage, appel Claude, exports, synchro)
+- `drive.js` : Google Drive (permission `drive.file`, Client ID à renseigner)
 - `sw.js` : service worker (installation + fonctionnement hors ligne). Changer `CACHE` à chaque version.
 - Librairies via CDN : SDK Anthropic, SheetJS (Excel), jsPDF, JSZip
 - Icônes générées par `node tools/make-icons.mjs`

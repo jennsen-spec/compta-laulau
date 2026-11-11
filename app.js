@@ -4,8 +4,9 @@
 // Tout est stocké sur le téléphone (IndexedDB). Rien n'est envoyé ailleurs qu'à l'API Anthropic.
 
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
+import * as drive from "./drive.js";
 
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.2.0";
 const MODEL = "claude-opus-5-5";
 
 // Catégories de départ, inspirées des dépenses d'un travailleur autonome au Québec.
@@ -92,13 +93,15 @@ const fileBase = (e) => `${e.date}_${safeName(e.vendor)}_${Number(e.total).toFix
 const RECEIPT_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["date", "vendor", "total", "gst", "qst", "payment", "category", "category_is_new", "confidence"],
+  required: ["date", "vendor", "total", "gst", "qst", "gst_no", "qst_no", "payment", "category", "category_is_new", "confidence"],
   properties: {
     date: { type: "string", description: "Date de la facture au format YYYY-MM-DD" },
     vendor: { type: "string", description: "Nom du commerce ou fournisseur" },
     total: { type: "number", description: "Montant total payé, taxes incluses" },
     gst: { type: "number", description: "Montant TPS/GST (0 si absent)" },
     qst: { type: "number", description: "Montant TVQ/QST (0 si absent)" },
+    gst_no: { type: "string", description: "Numéro d'inscription TPS du fournisseur (ex. 123456789RT0001), vide si absent" },
+    qst_no: { type: "string", description: "Numéro d'inscription TVQ du fournisseur (ex. 1234567890TQ0001), vide si absent" },
     payment: { type: "string", enum: ["", "Carte de crédit", "Débit", "Comptant", "Virement", "Autre"] },
     category: { type: "string", description: "Catégorie suggérée" },
     category_is_new: { type: "boolean", description: "true si la catégorie n'est pas dans la liste existante" },
@@ -121,6 +124,8 @@ Règles :
 - Choisis de préférence une catégorie existante. Si le fournisseur a déjà une catégorie, réutilise-la.
 - Propose une nouvelle catégorie seulement si aucune ne convient vraiment (category_is_new = true).
 - Montants en dollars canadiens, nombres décimaux. Mets 0 pour une taxe absente.
+- Elle est inscrite aux taxes et récupère la TPS et la TVQ payées : lis ces montants avec soin,
+  ainsi que les numéros d'inscription TPS/TVQ du fournisseur s'ils sont imprimés.
 - Si l'année n'est pas lisible, suppose l'année en cours (aujourd'hui : ${today}).
 - confidence = "basse" si l'image est floue ou si des montants sont incertains.`;
 
@@ -158,6 +163,8 @@ async function renderList() {
     ? `${items.length} facture${items.length > 1 ? "s" : ""} · ${money(total)}`
     : "";
 
+  renderSyncBanner(items);
+
   for (const e of items) {
     const li = document.createElement("li");
     li.innerHTML = `
@@ -172,7 +179,7 @@ async function renderList() {
     li.querySelector("strong").textContent = e.vendor;
     li.querySelector(".muted").textContent = e.date;
     li.querySelector(".tag").textContent = e.category;
-    li.querySelector(".amount").textContent = money(e.total);
+    li.querySelector(".amount").textContent = money(e.total) + (drive.isConnected() ? (e.synced ? " ☁️" : " ⏳") : "");
     li.onclick = () => openReview(e);
     list.appendChild(li);
   }
@@ -191,7 +198,7 @@ function fillCategoryList() {
 function openReview(expense, status = "") {
   current = expense;
   const f = $("#review-form");
-  for (const k of ["date", "vendor", "total", "gst", "qst", "payment", "category", "note"]) {
+  for (const k of ["date", "vendor", "total", "gst", "qst", "gst_no", "qst_no", "payment", "category", "note"]) {
     f.elements[k].value = expense[k] ?? "";
   }
   $("#review-img").src = expense.image;
@@ -225,7 +232,8 @@ async function onPhoto(file) {
     const r = await readReceipt(dataUrl, settings.categories, history);
     Object.assign(draft, {
       date: r.date, vendor: r.vendor, total: r.total,
-      gst: r.gst || "", qst: r.qst || "", payment: r.payment, category: r.category,
+      gst: r.gst || "", qst: r.qst || "", gst_no: r.gst_no, qst_no: r.qst_no,
+      payment: r.payment, category: r.category,
       categoryHint: r.category_is_new
         ? `💡 Nouvelle catégorie suggérée : « ${r.category} ». Garde-la ou choisis-en une existante.`
         : `💡 Catégorie suggérée : « ${r.category} ». Tu peux la changer.`,
@@ -244,12 +252,15 @@ async function onSave(ev) {
   ev.preventDefault();
   const f = ev.target.elements;
   const category = f.category.value.trim();
+  if (current.saved) markYearDirty(current.date.slice(0, 4)); // l'année a pu changer
   Object.assign(current, {
     date: f.date.value, vendor: f.vendor.value.trim(),
     total: Number(f.total.value), gst: Number(f.gst.value) || 0, qst: Number(f.qst.value) || 0,
-    payment: f.payment.value, category, note: f.note.value.trim(), saved: true,
+    gst_no: f.gst_no.value.trim(), qst_no: f.qst_no.value.trim(),
+    payment: f.payment.value, category, note: f.note.value.trim(), saved: true, synced: false,
   });
   delete current.categoryHint;
+  markYearDirty(current.date.slice(0, 4));
 
   // Nouvelle catégorie tapée à la main → on l'ajoute à la liste.
   const cats = settings.categories;
@@ -258,14 +269,85 @@ async function onSave(ev) {
   await dbPut(current);
   current = null;
   show("list");
-  renderList();
+  await renderList();
+  syncToDrive();
 }
 
 async function onCancel() {
-  if (current?.saved && confirm("Supprimer cette facture ?")) await dbDelete(current.id);
+  if (current?.saved && confirm("Supprimer cette facture ?")) {
+    if (current.driveId) queueDriveDelete(current.driveId);
+    markYearDirty(current.date.slice(0, 4));
+    await dbDelete(current.id);
+    current = null;
+    show("list");
+    await renderList();
+    syncToDrive();
+    return;
+  }
   current = null;
   show("list");
   renderList();
+}
+
+// ---------- Synchro Google Drive ----------
+// Chaque facture enregistrée est marquée synced=false, puis envoyée dès que possible.
+// Si Google demande de se reconnecter (jeton expiré au bout d'1 h), un bandeau
+// "toucher pour envoyer" apparaît : la fenêtre Google doit être ouverte par un clic.
+const readSet = (k) => new Set(JSON.parse(localStorage.getItem(k) || "[]"));
+const writeSet = (k, s) => localStorage.setItem(k, JSON.stringify([...s]));
+function markYearDirty(year) { const s = readSet("dirtyYears"); s.add(year); writeSet("dirtyYears", s); }
+function queueDriveDelete(id) { const s = readSet("driveDeletes"); s.add(id); writeSet("driveDeletes", s); }
+
+let syncing = false;
+
+async function syncToDrive({ interactive = false } = {}) {
+  if (!drive.isConfigured() || !drive.isConnected() || syncing) return;
+  syncing = true;
+  try {
+    if (!drive.hasValidToken()) {
+      if (!interactive) return; // on attend un clic sur le bandeau
+      await drive.connect();
+    }
+    renderSyncBanner(await dbAll(), "☁️ Envoi sur Drive…");
+
+    for (const id of readSet("driveDeletes")) {
+      await drive.deleteFile(id);
+      const s = readSet("driveDeletes"); s.delete(id); writeSet("driveDeletes", s);
+    }
+
+    for (const e of (await dbAll()).filter((x) => !x.synced)) {
+      const info = await drive.syncExpense(e, {
+        pdfBlob: buildPdf(e), pdfName: `${fileBase(e)}.pdf`, categoryFolder: e.category,
+      });
+      Object.assign(e, info, { synced: true });
+      await dbPut(e);
+    }
+
+    // Excel de chaque année modifiée.
+    const all = await dbAll();
+    for (const year of readSet("dirtyYears")) {
+      await drive.syncYearSheet(year, buildXlsx(all.filter((e) => e.date.startsWith(year))));
+      const s = readSet("dirtyYears"); s.delete(year); writeSet("dirtyYears", s);
+    }
+  } catch (err) {
+    console.error(err);
+    if (err.message !== "NEED_LOGIN") alert(`Envoi sur Drive impossible : ${err.message}`);
+  } finally {
+    syncing = false;
+    renderList();
+  }
+}
+
+function renderSyncBanner(items, text) {
+  const b = $("#sync-banner");
+  if (!drive.isConfigured() || !drive.isConnected()) { b.hidden = true; return; }
+  const pending = items.filter((e) => !e.synced).length;
+  const dirty = pending || readSet("driveDeletes").size || readSet("dirtyYears").size;
+  b.hidden = false;
+  b.disabled = Boolean(text) || !dirty;
+  b.textContent = text || (dirty
+    ? `☁️ ${pending || "Des"} changement${pending > 1 ? "s" : ""} à envoyer sur Drive — toucher pour envoyer`
+    : "☁️ Tout est sur Google Drive ✓");
 }
 
 // ---------- Exports ----------
@@ -282,13 +364,15 @@ function buildXlsx(items) {
     TPS: e.gst,
     TVQ: e.qst,
     "Montant HT": Math.round((e.total - e.gst - e.qst) * 100) / 100,
+    "N° TPS fournisseur": e.gst_no || "",
+    "N° TVQ fournisseur": e.qst_no || "",
     Paiement: e.payment,
     Note: e.note,
     "Fichier PDF": `${safeName(e.category)}/${fileBase(e)}.pdf`,
   }));
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [12, 28, 26, 12, 10, 10, 12, 16, 24, 50].map((wch) => ({ wch }));
+  ws["!cols"] = [12, 28, 26, 12, 10, 10, 12, 18, 18, 16, 24, 50].map((wch) => ({ wch }));
   XLSX.utils.book_append_sheet(wb, ws, "Dépenses");
 
   // Onglet récapitulatif par catégorie : pratique pour la comptable.
@@ -363,6 +447,37 @@ function renderSettings() {
     ul.appendChild(li);
   }
   $("#version").textContent = `Version ${APP_VERSION} · modèle ${MODEL}`;
+
+  const btn = $("#btn-drive");
+  if (!drive.isConfigured()) {
+    $("#drive-status").textContent = "Google Drive pas encore configuré (Client ID manquant dans drive.js).";
+    btn.hidden = true;
+  } else if (drive.isConnected()) {
+    $("#drive-status").textContent = "✅ Connecté : les factures vont dans « Compta Laulau » sur ton Drive.";
+    btn.hidden = false; btn.textContent = "Déconnecter Google Drive"; btn.className = "secondary";
+  } else {
+    $("#drive-status").textContent = "Pas connecté. Les factures restent seulement sur ce téléphone.";
+    btn.hidden = false; btn.textContent = "Connecter mon Google Drive"; btn.className = "";
+  }
+}
+
+async function onDriveButton() {
+  if (drive.isConnected()) {
+    if (!confirm("Déconnecter Drive ? (les fichiers déjà envoyés restent sur ton Drive)")) return;
+    drive.disconnect();
+    renderSettings();
+    return;
+  }
+  try {
+    await drive.connect();
+    // Première connexion : tout ce qui existe déjà doit partir sur Drive.
+    const all = await dbAll();
+    for (const e of all) { e.synced = false; await dbPut(e); markYearDirty(e.date.slice(0, 4)); }
+    renderSettings();
+    syncToDrive();
+  } catch (err) {
+    alert(`Connexion Google impossible : ${err.message}`);
+  }
 }
 
 // ---------- Branchements ----------
@@ -372,9 +487,12 @@ $("#btn-cancel").onclick = onCancel;
 $("#btn-export-xlsx").onclick = () => exportWith(buildXlsx, "xlsx");
 $("#btn-export-zip").onclick = () => exportWith(buildZip, "zip");
 $("#btn-settings").onclick = () => { renderSettings(); show("settings"); };
+$("#btn-drive").onclick = onDriveButton;
+$("#sync-banner").onclick = () => syncToDrive({ interactive: true });
 $("#btn-settings-done").onclick = () => { settings.apiKey = $("#api-key").value; show("list"); };
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
 
 show("list");
-renderList();
+await renderList();
+syncToDrive(); // rattrape ce qui n'est pas parti, si le jeton est encore valide

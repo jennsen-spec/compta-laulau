@@ -20,6 +20,7 @@
     <!-- Écran principal : liste des dépenses -->
     <section id="view-list">
       <div class="summary" id="summary"></div>
+      <button id="sync-banner" class="banner" hidden></button>
       <div class="actions-row">
         <button id="btn-export-xlsx" class="secondary">📊 Excel</button>
         <button id="btn-export-zip" class="secondary">📁 PDF (zip)</button>
@@ -39,6 +40,10 @@
           <label>Total TTC <input name="total" type="number" step="0.01" inputmode="decimal" required></label>
           <label>TPS <input name="gst" type="number" step="0.01" inputmode="decimal"></label>
           <label>TVQ <input name="qst" type="number" step="0.01" inputmode="decimal"></label>
+        </div>
+        <div class="grid2">
+          <label>N° TPS fournisseur <input name="gst_no" placeholder="…RT0001"></label>
+          <label>N° TVQ fournisseur <input name="qst_no" placeholder="…TQ0001"></label>
         </div>
         <label>Paiement
           <select name="payment">
@@ -66,6 +71,9 @@
         <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off">
       </label>
       <p class="hint">La clé reste sur ce téléphone (jamais envoyée ailleurs qu'à Anthropic).</p>
+      <h3>Google Drive</h3>
+      <p class="hint" id="drive-status"></p>
+      <button id="btn-drive" hidden></button>
       <h3>Catégories</h3>
       <ul id="cat-list" class="chips"></ul>
       <div class="actions-row">
@@ -84,6 +92,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
